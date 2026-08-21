@@ -8,13 +8,13 @@ from bke_demo_app.manifest import ManifestError, load_manifest
 
 VALID = {
     "schemaVersion": 1,
-    "productId": "bke-demo-app",
-    "displayName": "BKE Demo App",
-    "version": "1.0.0",
-    "entryPoint": "bke_demo_app",
+    "productId": "bke-trial-product",
+    "displayName": "BKE Digital Solutions",
+    "version": "1.1.2",
+    "entryPoint": "BKE Demo App",
     "updateChannel": "stable",
-    "minimumAgentVersion": "1.0.0",
-    "platform": "linux",
+    "minimumAgentVersion": "0.1.0",
+    "platform": "macos",
     "architecture": "x64",
 }
 
@@ -29,8 +29,9 @@ class ManifestTests(unittest.TestCase):
 
     def test_valid_manifest(self):
         manifest = load_manifest(self.write(VALID))
-        self.assertEqual(manifest.product_id, "bke-demo-app")
-        self.assertEqual(manifest.version, "1.0.0")
+        self.assertEqual(manifest.product_id, "bke-trial-product")
+        self.assertEqual(manifest.version, "1.1.2")
+        self.assertEqual(manifest.entry_point, "BKE Demo App")
 
     def test_missing_manifest(self):
         with self.assertRaises(ManifestError):
