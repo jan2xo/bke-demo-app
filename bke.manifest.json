@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "productId": "bke-demo-app",
+  "displayName": "BKE Demo App",
+  "version": "1.0.0",
+  "entryPoint": "bke_demo_app",
+  "updateChannel": "stable",
+  "minimumAgentVersion": "1.0.0",
+  "platform": "linux",
+  "architecture": "x64"
+}
