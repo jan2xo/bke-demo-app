@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - feat/gui-certification-demo-app
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile
+        run: python -m compileall -q src tests
+      - name: Behavioral and boundary tests
+        env:
+          PYTHONPATH: src
+        run: python -m unittest discover -s tests -v
+      - name: Canonical manifest/version check
+        env:
+          PYTHONPATH: src
+        run: |
+          python - <<'PY'
+          from bke_demo_app.manifest import load_manifest
+          from bke_demo_app.version import APP_VERSION
+          manifest = load_manifest('bke.manifest.json')
+          assert manifest.version == APP_VERSION
+          print(f'canonical version: {APP_VERSION}')
+          PY
+      - name: Diff hygiene
+        run: git diff --check HEAD^
