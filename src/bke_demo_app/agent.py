@@ -9,8 +9,9 @@ from typing import Any
 
 from .manifest import ProductManifest
 
-AGENT_AUTHORIZE_URL = "http://127.0.0.1:8765/v1/authorize"
-AGENT_LICENSE_CENTER_URL = "http://127.0.0.1:8765/license-center"
+AGENT_BASE_URL = "http://127.0.0.1:43873"
+AGENT_AUTHORIZE_URL = f"{AGENT_BASE_URL}/v1/authorize"
+AGENT_LICENSE_CENTER_URL = f"{AGENT_BASE_URL}/license-center"
 
 
 class AgentError(RuntimeError):
@@ -89,9 +90,7 @@ class LicensingAgentClient:
 
         license_center_url = data.get("license_center_url")
         if license_center_url is not None:
-            if not isinstance(license_center_url, str) or not license_center_url.startswith(
-                "http://127.0.0.1:8765/"
-            ):
+            if not isinstance(license_center_url, str) or not license_center_url.startswith(f"{AGENT_BASE_URL}/"):
                 raise AgentError("Licensing Agent returned an invalid License Center URL")
 
         decision = AuthorizationDecision(
