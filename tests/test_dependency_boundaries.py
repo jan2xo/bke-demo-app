@@ -32,7 +32,8 @@ class BoundaryTests(unittest.TestCase):
 
     def test_agent_authorization_boundary_is_loopback_only(self):
         agent_text = (SOURCE / "agent.py").read_text(encoding="utf-8")
-        self.assertIn('AGENT_AUTHORIZE_URL = "http://127.0.0.1:8765/v1/authorize"', agent_text)
+        self.assertIn('AGENT_BASE_URL = "http://127.0.0.1:43873"', agent_text)
+        self.assertIn('AGENT_AUTHORIZE_URL = f"{AGENT_BASE_URL}/v1/authorize"', agent_text)
         self.assertNotIn("0.0.0.0", agent_text)
 
 
