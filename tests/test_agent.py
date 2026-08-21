@@ -7,7 +7,7 @@ from bke_demo_app.agent import AgentError, LicensingAgentClient, UpdateState
 from bke_demo_app.manifest import ProductManifest
 
 
-MANIFEST = ProductManifest(1, "bke-demo-app", "BKE Demo App", "1.0.0", "bke_demo_app", "stable", "1.0.0", "linux", "x64")
+MANIFEST = ProductManifest(1, "bke-trial-product", "BKE Digital Solutions", "1.1.2", "BKE Demo App", "stable", "0.1.0", "macos", "x64")
 
 
 class FakeResponse:
@@ -34,7 +34,7 @@ class AgentTests(unittest.TestCase):
         with patch("urllib.request.urlopen", return_value=FakeResponse(payload)):
             decision = LicensingAgentClient().authorize(MANIFEST, "install-1")
         self.assertFalse(decision.authorized)
-        self.assertEqual(decision.license_center_url, "http://127.0.0.1:8765/license-center")
+        self.assertEqual(decision.license_center_url, "http://127.0.0.1:43873/license-center")
 
     def test_malformed_response_fails_closed(self):
         with patch("urllib.request.urlopen", return_value=FakeResponse(b"not-json")):
