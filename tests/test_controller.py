@@ -9,13 +9,13 @@ from bke_demo_app.controller import AppState, DemoController
 
 MANIFEST = {
     "schemaVersion": 1,
-    "productId": "bke-demo-app",
-    "displayName": "BKE Demo App",
-    "version": "1.0.0",
-    "entryPoint": "bke_demo_app",
+    "productId": "bke-trial-product",
+    "displayName": "BKE Digital Solutions",
+    "version": "1.1.2",
+    "entryPoint": "BKE Demo App",
     "updateChannel": "stable",
-    "minimumAgentVersion": "1.0.0",
-    "platform": "linux",
+    "minimumAgentVersion": "0.1.0",
+    "platform": "macos",
     "architecture": "x64",
 }
 
@@ -55,7 +55,7 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual(ran, [])
 
     def test_activation_required_stays_blocked(self):
-        controller = self.controller(AuthorizationDecision(False, "activation_required", UpdateState.CURRENT, "http://127.0.0.1:8765/license-center"))
+        controller = self.controller(AuthorizationDecision(False, "activation_required", UpdateState.CURRENT, "http://127.0.0.1:43873/license-center"))
         self.assertEqual(controller.refresh().state, AppState.ACTIVATION_REQUIRED)
         self.assertFalse(controller.status.protected_enabled)
 
