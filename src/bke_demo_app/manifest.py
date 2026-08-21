@@ -83,8 +83,6 @@ def load_manifest(path: str | Path) -> ProductManifest:
         raise ManifestError(
             f"application version {APP_VERSION} does not match manifest version {data['version']}"
         )
-    if data["entryPoint"] != "bke_demo_app":
-        raise ManifestError("manifest entryPoint must be bke_demo_app")
 
     return ProductManifest(
         schema_version=data["schemaVersion"],
