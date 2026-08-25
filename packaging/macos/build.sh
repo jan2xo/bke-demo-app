@@ -9,7 +9,9 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
   exit 1
 fi
 
-python - <<'PY'
+PYTHON_BIN="${PYTHON_BIN:-python3}"
+
+PYTHONPATH=src "$PYTHON_BIN" - <<'PY'
 import json
 from pathlib import Path
 from bke_demo_app.version import APP_VERSION
@@ -19,21 +21,26 @@ if manifest["version"] != APP_VERSION:
     raise SystemExit(f"manifest version {manifest['version']} != app version {APP_VERSION}")
 if manifest["platform"] != "macos":
     raise SystemExit("macOS package requires manifest platform=macos")
-if manifest["entryPoint"] != "BKE Demo App":
-    raise SystemExit("macOS package requires manifest entryPoint='BKE Demo App'")
+if manifest["entryPoint"] != "BKE Institution Suite":
+    raise SystemExit("macOS package requires manifest entryPoint='BKE Institution Suite'")
 PY
+
+if ! "$PYTHON_BIN" -c 'import PyInstaller' >/dev/null 2>&1; then
+  echo "PyInstaller is required. Install it with: $PYTHON_BIN -m pip install pyinstaller" >&2
+  exit 1
+fi
 
 rm -rf build dist
 
-pyinstaller \
+"$PYTHON_BIN" -m PyInstaller \
   --clean \
   --noconfirm \
   --windowed \
   --onedir \
-  --name "BKE Demo App" \
+  --name "BKE Institution Suite" \
   --paths src \
   packaging/macos/entry.py
 
-cp bke.manifest.json "dist/BKE Demo App/bke.manifest.json"
+cp bke.manifest.json "dist/BKE Institution Suite/bke.manifest.json"
 
-echo "Built: $ROOT/dist/BKE Demo App"
+echo "Built: $ROOT/dist/BKE Institution Suite"
