@@ -18,16 +18,16 @@ class DemoAppWindow:
     def __init__(self, root: tk.Tk, controller: DemoController) -> None:
         self.root = root
         self.controller = controller
-        root.title("BKE Demo App")
+        root.title("BKE Institution Suite")
         root.minsize(560, 360)
 
         container = ttk.Frame(root, padding=20)
         container.pack(fill="both", expand=True)
 
-        ttk.Label(container, text="BKE Demo App", font=("TkDefaultFont", 18, "bold")).pack(anchor="w")
+        ttk.Label(container, text="BKE Institution Suite", font=("TkDefaultFont", 18, "bold")).pack(anchor="w")
         ttk.Label(
             container,
-            text="Permanent Licensing Agent boundary certification application",
+            text="BKE Licensing Agent authorization demo product",
         ).pack(anchor="w", pady=(2, 18))
 
         self.state_var = tk.StringVar(value="Starting")
