@@ -11,7 +11,7 @@ MANIFEST = {
     "schemaVersion": 1,
     "productId": "bke-trial-product",
     "displayName": "BKE Digital Solutions",
-    "version": "1.1.2",
+    "version": "2.0.0",
     "entryPoint": "BKE Demo App",
     "updateChannel": "stable",
     "minimumAgentVersion": "0.1.0",
