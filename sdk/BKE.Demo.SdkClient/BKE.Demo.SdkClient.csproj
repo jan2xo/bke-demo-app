@@ -12,11 +12,4 @@
   <ItemGroup>
     <PackageReference Include="BKE.Desktop.Client" Version="1.0.0" />
   </ItemGroup>
-
-  <ItemGroup>
-    <None Include="../../bke.manifest.json"
-          Link="bke.manifest.json"
-          CopyToOutputDirectory="PreserveNewest"
-          CopyToPublishDirectory="PreserveNewest" />
-  </ItemGroup>
 </Project>
