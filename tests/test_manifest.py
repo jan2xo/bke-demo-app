@@ -10,7 +10,7 @@ VALID = {
     "schemaVersion": 1,
     "productId": "bke-trial-product",
     "displayName": "BKE Digital Solutions",
-    "version": "1.1.2",
+    "version": "2.0.0",
     "entryPoint": "BKE Demo App",
     "updateChannel": "stable",
     "minimumAgentVersion": "0.1.0",
@@ -30,7 +30,7 @@ class ManifestTests(unittest.TestCase):
     def test_valid_manifest(self):
         manifest = load_manifest(self.write(VALID))
         self.assertEqual(manifest.product_id, "bke-trial-product")
-        self.assertEqual(manifest.version, "1.1.2")
+        self.assertEqual(manifest.version, "2.0.0")
         self.assertEqual(manifest.entry_point, "BKE Demo App")
 
     def test_missing_manifest(self):
