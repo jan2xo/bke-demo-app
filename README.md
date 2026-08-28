@@ -1,72 +1,93 @@
 # BKE Demo App
 
-Permanent GUI certification application for the BKE product-facing Licensing Agent boundary.
+Certification repository for the BKE product-facing Licensing Agent boundary.
 
-## Purpose
+## Current SDK certification path
 
-This repository exists to prove that a BKE desktop product can remain deliberately thin: the product describes itself with `bke.manifest.json`, asks the local BKE Licensing Agent for authorization, and never duplicates licensing or updater verification logic.
+The repository now includes a .NET 8 harness under `sdk/BKE.Demo.SdkClient` that consumes the released `BKE.Desktop.Client` v1.0.0 package.
 
-Canonical integration references used for this implementation:
+Certified SDK source anchor:
 
-- `jan2xo/bke-licensing-agent` main: `d1e2307e6329977f2c3c171fd92e333d6973328d`
-- `jan2xo/bke-updater-core` main: `c78f89244073721c928626ac33da34a4258f5a12`
+`6fb8cb52c60d1e34414d2a4bc53fb7be52b1c294`
 
-The Demo App has no direct updater-core dependency.
+Vendored package:
 
-## Canonical product manifest
+`packages/BKE.Desktop.Client.1.0.0.nupkg`
 
-`bke.manifest.json` identifies the product as `bke-demo-app`. Application version is owned by `src/bke_demo_app/version.py`; packaging reads that value dynamically and startup manifest validation rejects any manifest version mismatch.
+Required SHA-256:
 
-## Licensing Agent boundary
+`9cd80194bc0ddb5f1f983143d37282f470cfb7772e41fa2d9df691f48425071e`
 
-Authorization is requested only from:
+The SDK harness does not implement raw Agent HTTP transport. It calls `BkeDesktopClient.Create()`, `AuthorizeAsync(...)`, and `OpenLicenseCenterAsync(...)`; the SDK owns the fixed loopback Agent protocol, timeouts, parsing, and typed outcomes.
 
-`POST http://127.0.0.1:8765/v1/authorize`
+## Product identity
 
-Request shape:
+The current canonical test manifest is `bke.manifest.json`:
 
-```json
-{
-  "product_id": "bke-demo-app",
-  "version": "1.0.0",
-  "installation_id": "..."
-}
-```
+- product ID: `bke-trial-product`
+- version: `2.0.0`
+- display name: `BKE Digital Solutions`
 
-Minimum response shape:
+The harness reads product ID/version from that manifest and uses one persisted local installation ID. Set `BKE_DEMO_INSTALLATION_ID` to override the ID for a controlled test.
 
-```json
-{
-  "authorized": true,
-  "reason": "ok"
-}
-```
+## Run the SDK harness
 
-The Agent may additionally return `update_state` and an Agent-owned loopback `license_center_url`. Unknown update state is treated as unverifiable. A non-loopback License Center URL is rejected.
-
-The Demo App never accepts a license key, verifies a lease, verifies signatures, resolves updater trust, or imports updater-core. Activation is routed to the Licensing Agent-owned License Center at `http://127.0.0.1:8765/license-center` when the Agent reports `activation_required`.
-
-## GUI states
-
-The GUI exposes authorization refresh, Agent-owned activation routing, update state, and a protected demo action. Protected functionality is enabled only in the `AUTHORIZED` state. Missing/invalid manifest, unavailable Agent, deny, activation required, unsupported, and unverifiable states all fail closed.
-
-## Verification
-
-The repository CI runs without third-party runtime or test dependencies:
+Restore/build from the repository root:
 
 ```bash
-PYTHONPATH=src python -m unittest discover -s tests -v
-python -m compileall -q src tests
+dotnet restore sdk/BKE.Demo.SdkClient/BKE.Demo.SdkClient.csproj --configfile NuGet.Config
+dotnet build sdk/BKE.Demo.SdkClient/BKE.Demo.SdkClient.csproj -c Release --no-restore
 ```
 
-Coverage includes valid/invalid/missing manifest, version mismatch, Agent ALLOW/DENY, activation required, Agent unavailable, malformed response, unsupported/unverifiable update states, protected functionality never running after DENY, no direct updater-core dependency/import, and no duplicated lease/signature verification logic.
-
-Native macOS and Windows GUI/E2E certification is intentionally not claimed by this repository CI and remains a separate certification step.
-
-## Run
-
-With a compatible local Licensing Agent listening on the loopback endpoint:
+Authorization only:
 
 ```bash
-PYTHONPATH=src python -m bke_demo_app
+dotnet run --project sdk/BKE.Demo.SdkClient -- authorize
 ```
+
+Full activation test:
+
+```bash
+dotnet run --project sdk/BKE.Demo.SdkClient -- full
+```
+
+`full` performs authorization first. If the SDK reports `ActivationRequired`, it asks the Agent to open its License Center and, after that flow completes, authorizes again using the same product/version/installation identity.
+
+Useful outcomes are printed directly:
+
+```text
+sdk=BKE.Desktop.Client/1.0.0
+product_id=bke-trial-product
+version=2.0.0
+installation_id=...
+authorization_status=Authorized
+authorization_reason=...
+```
+
+The CI workflow also publishes self-contained `win-x64` and `osx-arm64` SDK demo artifacts so the harness can be exercised on a machine running the Licensing Agent without requiring a source checkout.
+
+## Legacy Python GUI
+
+The existing Tkinter certification implementation under `src/bke_demo_app` is retained for historical/behavioral coverage. It predates the reusable desktop SDK and still contains its own product-side transport. Do not use that legacy path as evidence that `BKE.Desktop.Client` works.
+
+For SDK/Agent certification, use `sdk/BKE.Demo.SdkClient`.
+
+## Trust boundary
+
+The demo product is not a licensing authority. It does not receive or verify signed leases, signing keys, entitlement state, or updater trust. The Licensing Agent remains the local authority.
+
+The SDK harness must not contain direct references to the Agent endpoint or raw `/v1/authorize` / `/v1/license-center/open` protocol paths; CI enforces that boundary.
+
+## CI
+
+CI verifies:
+
+- existing Python compile/tests and manifest/version checks
+- .NET 8 SDK selection
+- exact vendored SDK package SHA-256
+- restore resolves `BKE.Desktop.Client/1.0.0`
+- Release build succeeds
+- SDK harness contains SDK calls and no direct Agent HTTP transport
+- self-contained Windows x64 and macOS arm64 demo artifacts publish successfully
+
+Native end-to-end authorization still requires a real local Licensing Agent and is intentionally performed outside hosted CI.
