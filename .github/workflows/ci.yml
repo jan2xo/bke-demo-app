@@ -1,0 +1,156 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - feat/gui-certification-demo-app
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Verify .NET SDK family
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(dotnet --version)"
+          echo "dotnet=$version"
+          [[ "$version" == 8.0.* ]]
+
+      - name: Verify certified BKE Desktop SDK package
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "9cd80194bc0ddb5f1f983143d37282f470cfb7772e41fa2d9df691f48425071e  packages/BKE.Desktop.Client.1.0.0.nupkg" | sha256sum --check --strict
+
+      - name: Compile legacy Python certification app
+        run: python -m compileall -q src tests
+
+      - name: Legacy behavioral and boundary tests
+        env:
+          PYTHONPATH: src
+        run: python -m unittest discover -s tests -v
+
+      - name: Canonical manifest/version check
+        env:
+          PYTHONPATH: src
+        run: |
+          python - <<'PY'
+          from bke_demo_app.manifest import load_manifest
+          from bke_demo_app.version import APP_VERSION
+          manifest = load_manifest('bke.manifest.json')
+          assert manifest.version == APP_VERSION
+          print(f'canonical version: {APP_VERSION}')
+          PY
+
+      - name: Restore SDK harness
+        run: dotnet restore sdk/BKE.Demo.SdkClient/BKE.Demo.SdkClient.csproj --configfile NuGet.Config
+
+      - name: Verify SDK package resolution
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'BKE.Desktop.Client/1.0.0' sdk/BKE.Demo.SdkClient/obj/project.assets.json
+
+      - name: Build SDK harness
+        run: dotnet build sdk/BKE.Demo.SdkClient/BKE.Demo.SdkClient.csproj -c Release --no-restore
+
+      - name: SDK harness boundary gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'BkeDesktopClient.Create' sdk/BKE.Demo.SdkClient/Program.cs
+          grep -q 'AuthorizeAsync' sdk/BKE.Demo.SdkClient/Program.cs
+          grep -q 'OpenLicenseCenterAsync' sdk/BKE.Demo.SdkClient/Program.cs
+          if grep -R -E '127\.0\.0\.1:43873|/v1/authorize|/v1/license-center/open|new HttpClient|HttpClient\(' sdk/BKE.Demo.SdkClient; then
+            echo 'SDK harness must not duplicate Licensing Agent transport.' >&2
+            exit 1
+          fi
+
+      - name: SDK harness smoke
+        run: dotnet run --project sdk/BKE.Demo.SdkClient/BKE.Demo.SdkClient.csproj -c Release --no-build -- --help
+
+      - name: Publish Windows x64 SDK demo
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet publish sdk/BKE.Demo.SdkClient/BKE.Demo.SdkClient.csproj -c Release -r win-x64 --self-contained true -o artifacts/win-x64
+          cp sdk/manifests/windows-x64/bke.manifest.json artifacts/win-x64/bke.manifest.json
+
+      - name: Publish macOS arm64 SDK demo
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet publish sdk/BKE.Demo.SdkClient/BKE.Demo.SdkClient.csproj -c Release -r osx-arm64 --self-contained true -o artifacts/osx-arm64
+          cp sdk/manifests/macos-arm64/bke.manifest.json artifacts/osx-arm64/bke.manifest.json
+
+      - name: Verify published products are Agent-discoverable
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          expected = {
+              Path('artifacts/win-x64'): {
+                  'platform': 'windows',
+                  'architecture': 'x64',
+                  'entryPoint': 'BKE.Demo.SdkClient.exe',
+              },
+              Path('artifacts/osx-arm64'): {
+                  'platform': 'macos',
+                  'architecture': 'arm64',
+                  'entryPoint': 'BKE.Demo.SdkClient',
+              },
+          }
+
+          for root, target in expected.items():
+              manifest_path = root / 'bke.manifest.json'
+              manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+              assert manifest['schemaVersion'] == 1
+              assert manifest['productId'] == 'bke-trial-product'
+              assert manifest['version'] == '2.0.0'
+              assert manifest['minimumAgentVersion'] == '1.0.0'
+              assert manifest['platform'] == target['platform']
+              assert manifest['architecture'] == target['architecture']
+              assert manifest['entryPoint'] == target['entryPoint']
+              entry = root / manifest['entryPoint']
+              assert entry.is_file(), f'missing manifest entryPoint: {entry}'
+              print(f"discoverable product: {manifest['platform']}/{manifest['architecture']} -> {entry}")
+          PY
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: BKE-Demo-SDK-Client-win-x64
+          path: artifacts/win-x64
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: BKE-Demo-SDK-Client-osx-arm64
+          path: artifacts/osx-arm64
+          if-no-files-found: error
+
+      - name: Diff hygiene
+        shell: bash
+        run: |
+          if git rev-parse HEAD^ >/dev/null 2>&1; then
+            git diff --check HEAD^
+          else
+            git diff --check
+          fi

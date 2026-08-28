@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "productId": "bke-trial-product",
+  "displayName": "BKE Demo SDK Client",
+  "version": "2.0.0",
+  "entryPoint": "BKE.Demo.SdkClient",
+  "updateChannel": "stable",
+  "minimumAgentVersion": "1.0.0",
+  "platform": "macos",
+  "architecture": "arm64"
+}
