@@ -7,7 +7,7 @@ from bke_demo_app.agent import AgentError, LicensingAgentClient, UpdateState
 from bke_demo_app.manifest import ProductManifest
 
 
-MANIFEST = ProductManifest(1, "bke-trial-product", "BKE Digital Solutions", "1.1.2", "BKE Demo App", "stable", "0.1.0", "macos", "x64")
+MANIFEST = ProductManifest(1, "bke-trial-product", "BKE Digital Solutions", "2.0.0", "BKE Demo App", "stable", "0.1.0", "macos", "x64")
 
 
 class FakeResponse:
