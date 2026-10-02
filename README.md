@@ -1,5 +1,29 @@
 # BKE Demo App
 
+Certification repository for both the standalone BKE Desktop SDK boundary and the first real BKE Launcher-hosted plugin.
+
+## Current Launcher plugin path
+
+The primary integration target is now the build-time Launcher plugin under:
+
+`plugin/BKE.Demo.LauncherPlugin`
+
+Canonical plugin identity:
+
+- product ID: `bke-trial-product`
+- version: `2.0.0`
+- execution type: `LAUNCHER_PLUGIN`
+- host contract: `BKE.Launcher.Plugin.Abstractions` v1
+- pinned Launcher source: see `eng/launcher-source.sha`
+
+The plugin implements `IBkeLauncherPlugin`, is compiled into a pinned BKE Launcher build, and opens a small Avalonia demo window in the Launcher process. It does not call the Licensing Agent or Digital Solutions directly. Authorization remains Launcher → Licensing Agent → Digital Solutions; the plugin receives only the narrow host context.
+
+The plugin project is intentionally source-consumed from this repository. The Launcher pins this repository at an exact Git SHA and compiles the project at build time. There is no arbitrary runtime DLL discovery or remote plugin loading.
+
+Headless contract certification lives under:
+
+`plugin/BKE.Demo.LauncherPlugin.Certification`
+
 Certification repository for the BKE product-facing Licensing Agent boundary.
 
 ## Current SDK certification path
