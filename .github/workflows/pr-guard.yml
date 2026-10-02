@@ -33,36 +33,47 @@ jobs:
           if re.search(r"(?m)^  (push|pull_request|schedule|workflow_run):", workflow):
               raise SystemExit("Substantial certification gained an automatic trigger.")
 
-          pin = (root / "eng/launcher-source.sha").read_text(encoding="utf-8").strip()
-          if not re.fullmatch(r"[0-9a-f]{40}", pin):
-              raise SystemExit("Launcher source pin must be an exact lowercase SHA.")
+          pin_path = root / "eng/launcher-source.sha"
+          plugin_root = root / "plugin/BKE.Demo.LauncherPlugin"
+          project_path = plugin_root / "BKE.Demo.LauncherPlugin.csproj"
 
-          project = (
-              root / "plugin/BKE.Demo.LauncherPlugin/BKE.Demo.LauncherPlugin.csproj"
-          ).read_text(encoding="utf-8")
-          if "BKE.Launcher.Plugin.Abstractions" not in project:
-              raise SystemExit("Demo plugin is not bound to Launcher plugin abstractions.")
-          if "BKE.Launcher.PluginHost/BKE.Launcher.PluginHost.csproj" in project:
-              raise SystemExit("Demo plugin absorbed the Launcher runtime project.")
+          if pin_path.exists() or project_path.exists():
+              if not pin_path.is_file() or not project_path.is_file():
+                  raise SystemExit("Plugin source and Launcher pin must appear together.")
 
-          source = "\n".join(
-              path.read_text(encoding="utf-8")
-              for path in (root / "plugin/BKE.Demo.LauncherPlugin").glob("*.cs")
-          )
-          forbidden = [
-              "127.0.0.1:43873",
-              "/v1/",
-              "HttpClient",
-              "BKE.Desktop.Client",
-              "agent-sessions",
-              "DATABASE_URL",
-              "PAYMONGO",
-          ]
-          present = [token for token in forbidden if token.lower() in source.lower()]
-          if present:
-              raise SystemExit(
-                  "Launcher plugin crossed the host/Agent/DS boundary: "
-                  + ", ".join(present)
+              pin = pin_path.read_text(encoding="utf-8").strip()
+              if not re.fullmatch(r"[0-9a-f]{40}", pin):
+                  raise SystemExit("Launcher source pin must be an exact lowercase SHA.")
+
+              project = project_path.read_text(encoding="utf-8")
+              if "BKE.Launcher.Plugin.Abstractions" not in project:
+                  raise SystemExit("Demo plugin is not bound to Launcher plugin abstractions.")
+              if "BKE.Launcher.PluginHost/BKE.Launcher.PluginHost.csproj" in project:
+                  raise SystemExit("Demo plugin absorbed the Launcher runtime project.")
+
+              source = "\n".join(
+                  path.read_text(encoding="utf-8")
+                  for path in plugin_root.glob("*.cs")
               )
+              forbidden = [
+                  "127.0.0.1:43873",
+                  "/v1/",
+                  "HttpClient",
+                  "BKE.Desktop.Client",
+                  "agent-sessions",
+                  "DATABASE_URL",
+                  "PAYMONGO",
+              ]
+              present = [
+                  token for token in forbidden
+                  if token.lower() in source.lower()
+              ]
+              if present:
+                  raise SystemExit(
+                      "Launcher plugin crossed the host/Agent/DS boundary: "
+                      + ", ".join(present)
+                  )
+          else:
+              print("Plugin files absent: CI-bootstrap policy-only guard.")
 
           print("BKE Demo PR Guard: PASS")
