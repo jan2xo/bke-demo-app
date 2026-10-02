@@ -6,8 +6,8 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <AssemblyName>BKE.Demo.LauncherPlugin</AssemblyName>
     <RootNamespace>BKE.Demo.LauncherPlugin</RootNamespace>
-    <BkeLauncherRoot Condition="'$(BkeLauncherRoot)' == ''">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\..\..\'))</BkeLauncherRoot>
-    <BkeLauncherAbstractionsProject>$(BkeLauncherRoot)\src\BKE.Launcher.Plugin.Abstractions\BKE.Launcher.Plugin.Abstractions.csproj</BkeLauncherAbstractionsProject>
+    <BkeLauncherRoot Condition="'$(BkeLauncherRoot)' == ''">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../../../..'))</BkeLauncherRoot>
+    <BkeLauncherAbstractionsProject>$(BkeLauncherRoot)/src/BKE.Launcher.Plugin.Abstractions/BKE.Launcher.Plugin.Abstractions.csproj</BkeLauncherAbstractionsProject>
   </PropertyGroup>
 
   <ItemGroup>
