@@ -1,0 +1,344 @@
+name: Intent Certification
+
+on:
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact BKE Demo App commit SHA to certify
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+
+concurrency:
+  group: bke-demo-intent-${{ (github.event_name == 'issue_comment' && github.event.issue.number) || inputs.source_sha || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  plan:
+    name: Resolve certification intent
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.issue.pull_request && startsWith(github.event.comment.body, '/certify plugin'))
+    runs-on: ubuntu-latest
+    outputs:
+      source_sha: ${{ steps.plan.outputs.source_sha }}
+      launcher_source_sha: ${{ steps.plan.outputs.launcher_source_sha }}
+    steps:
+      - id: plan
+        name: Resolve exact Demo + Launcher SHAs
+        uses: actions/github-script@v7
+        env:
+          DISPATCH_SHA: ${{ inputs.source_sha }}
+        with:
+          script: |
+            let sourceSha;
+            if (context.eventName === "issue_comment") {
+              const association = context.payload.comment?.author_association ?? "NONE";
+              const allowed = new Set(["OWNER", "MEMBER", "COLLABORATOR"]);
+              if (!allowed.has(association)) {
+                core.setFailed(`Certification rejected for author association ${association}.`);
+                return;
+              }
+              const response = await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: context.payload.issue.number,
+              });
+              sourceSha = response.data.head.sha;
+            } else {
+              sourceSha = (process.env.DISPATCH_SHA ?? "").trim();
+            }
+
+            if (!/^[0-9a-f]{40}$/.test(sourceSha ?? "")) {
+              core.setFailed("Certification requires an exact lowercase Demo App SHA.");
+              return;
+            }
+
+            const pin = await github.rest.repos.getContent({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              path: "eng/launcher-source.sha",
+              ref: sourceSha,
+            });
+            if (Array.isArray(pin.data) || pin.data.type !== "file" || typeof pin.data.content !== "string") {
+              core.setFailed("Launcher source pin is not a regular file.");
+              return;
+            }
+            const launcherSourceSha = Buffer
+              .from(pin.data.content.replace(/\s/g, ""), "base64")
+              .toString("utf8")
+              .trim();
+            if (!/^[0-9a-f]{40}$/.test(launcherSourceSha)) {
+              core.setFailed("Launcher source pin must be an exact lowercase SHA.");
+              return;
+            }
+
+            core.setOutput("source_sha", sourceSha);
+            core.setOutput("launcher_source_sha", launcherSourceSha);
+
+  plugin:
+    name: Demo repository + Launcher plugin
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SOURCE_SHA: ${{ needs.plan.outputs.source_sha }}
+      LAUNCHER_SOURCE_SHA: ${{ needs.plan.outputs.launcher_source_sha }}
+    steps:
+      - name: Checkout exact Demo App head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          fetch-depth: 0
+
+      - name: Verify exact Demo App checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+
+      - name: Checkout pinned BKE Launcher
+        uses: actions/checkout@v4
+        with:
+          repository: jan2xo/bke-launcher
+          ref: ${{ env.LAUNCHER_SOURCE_SHA }}
+          path: .bke/launcher
+          fetch-depth: 1
+
+      - name: Verify pinned Launcher authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C .bke/launcher rev-parse HEAD)" = "$LAUNCHER_SOURCE_SHA"
+          test -f .bke/launcher/src/BKE.Launcher.Plugin.Abstractions/BKE.Launcher.Plugin.Abstractions.csproj
+          test -f .bke/launcher/src/BKE.Launcher.Plugin.Abstractions/PluginContract.cs
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Verify SDK families
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet --list-sdks
+          version="$(dotnet --version)"
+          echo "selected_dotnet=$version"
+          [[ "$version" == 10.0.* ]]
+
+      - name: Verify certified Desktop SDK package
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "9cd80194bc0ddb5f1f983143d37282f470cfb7772e41fa2d9df691f48425071e  packages/BKE.Desktop.Client.1.0.0.nupkg" | sha256sum --check --strict
+
+      - name: Compile legacy Python certification app
+        run: python -m compileall -q src tests
+
+      - name: Legacy behavioral and boundary tests
+        env:
+          PYTHONPATH: src
+        run: python -m unittest discover -s tests -v
+
+      - name: Canonical manifest/version check
+        env:
+          PYTHONPATH: src
+        run: |
+          python - <<'PY'
+          from bke_demo_app.manifest import load_manifest
+          from bke_demo_app.version import APP_VERSION
+          manifest = load_manifest("bke.manifest.json")
+          assert manifest.product_id == "bke-trial-product"
+          assert manifest.version == APP_VERSION == "2.0.0"
+          print(f"canonical product: {manifest.product_id}@{manifest.version}")
+          PY
+
+      - name: Restore and build standalone Desktop SDK harness
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet restore sdk/BKE.Demo.SdkClient/BKE.Demo.SdkClient.csproj --configfile NuGet.Config
+          grep -q 'BKE.Desktop.Client/1.0.0' sdk/BKE.Demo.SdkClient/obj/project.assets.json
+          dotnet build sdk/BKE.Demo.SdkClient/BKE.Demo.SdkClient.csproj -c Release --no-restore
+
+      - name: Standalone SDK boundary gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'BkeDesktopClient.Create' sdk/BKE.Demo.SdkClient/Program.cs
+          grep -q 'AuthorizeAsync' sdk/BKE.Demo.SdkClient/Program.cs
+          grep -q 'OpenLicenseCenterAsync' sdk/BKE.Demo.SdkClient/Program.cs
+          if grep -R -E '127\.0\.0\.1:43873|/v1/authorize|/v1/license-center/open|new HttpClient|HttpClient\(' sdk/BKE.Demo.SdkClient; then
+            echo 'Standalone SDK harness must not duplicate Licensing Agent transport.' >&2
+            exit 1
+          fi
+          dotnet run --project sdk/BKE.Demo.SdkClient/BKE.Demo.SdkClient.csproj -c Release --no-build -- --help
+
+      - name: Build first real Launcher plugin
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$GITHUB_WORKSPACE/.bke/launcher"
+          dotnet build             plugin/BKE.Demo.LauncherPlugin.Certification/BKE.Demo.LauncherPlugin.Certification.csproj             -c Release             -p:BkeLauncherRoot="$root"
+
+      - name: Certify Launcher plugin contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$GITHUB_WORKSPACE/.bke/launcher"
+          dotnet run             --project plugin/BKE.Demo.LauncherPlugin.Certification/BKE.Demo.LauncherPlugin.Certification.csproj             -c Release             --no-build             -p:BkeLauncherRoot="$root"
+
+      - name: Launcher plugin boundary gate
+        shell: python
+        run: |
+          from pathlib import Path
+
+          root = Path("plugin/BKE.Demo.LauncherPlugin")
+          source = "\n".join(
+              path.read_text(encoding="utf-8")
+              for path in root.glob("*.cs")
+          )
+          forbidden = [
+              "127.0.0.1:43873",
+              "/v1/",
+              "HttpClient",
+              "BKE.Desktop.Client",
+              "agent-sessions",
+              "DATABASE_URL",
+              "PAYMONGO",
+              "RESEND_API_KEY",
+          ]
+          present = [token for token in forbidden if token.lower() in source.lower()]
+          if present:
+              raise SystemExit(
+                  "Launcher plugin crossed Agent/DS/credential boundaries: "
+                  + ", ".join(present)
+              )
+
+          project = (root / "BKE.Demo.LauncherPlugin.csproj").read_text(encoding="utf-8")
+          if "BKE.Launcher.Plugin.Abstractions" not in project:
+              raise SystemExit("Plugin does not consume Launcher abstractions.")
+          if "BKE.Launcher.PluginHost/BKE.Launcher.PluginHost.csproj" in project:
+              raise SystemExit("Plugin depends on Launcher runtime instead of abstractions.")
+
+          print("BKE Demo Launcher plugin boundary: PASS")
+
+      - name: Publish standalone Windows x64 SDK demo
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet publish sdk/BKE.Demo.SdkClient/BKE.Demo.SdkClient.csproj             -c Release -r win-x64 --self-contained true -o artifacts/win-x64
+          cp sdk/manifests/windows-x64/bke.manifest.json artifacts/win-x64/bke.manifest.json
+
+      - name: Publish standalone macOS arm64 SDK demo
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet publish sdk/BKE.Demo.SdkClient/BKE.Demo.SdkClient.csproj             -c Release -r osx-arm64 --self-contained true -o artifacts/osx-arm64
+          cp sdk/manifests/macos-arm64/bke.manifest.json artifacts/osx-arm64/bke.manifest.json
+
+      - name: Verify standalone published products
+        shell: python
+        run: |
+          import json
+          from pathlib import Path
+
+          expected = {
+              Path("artifacts/win-x64"): ("windows", "x64", "BKE.Demo.SdkClient.exe"),
+              Path("artifacts/osx-arm64"): ("macos", "arm64", "BKE.Demo.SdkClient"),
+          }
+          for root, (platform, architecture, entry_point) in expected.items():
+              manifest = json.loads((root / "bke.manifest.json").read_text(encoding="utf-8"))
+              assert manifest["schemaVersion"] == 1
+              assert manifest["productId"] == "bke-trial-product"
+              assert manifest["version"] == "2.0.0"
+              assert manifest["minimumAgentVersion"] == "1.0.0"
+              assert manifest["platform"] == platform
+              assert manifest["architecture"] == architecture
+              assert manifest["entryPoint"] == entry_point
+              assert (root / entry_point).is_file()
+              print(f"standalone artifact: {platform}/{architecture} -> {entry_point}")
+
+      - name: Build plugin provenance evidence
+        shell: python
+        env:
+          SOURCE_SHA: ${{ needs.plan.outputs.source_sha }}
+          LAUNCHER_SOURCE_SHA: ${{ needs.plan.outputs.launcher_source_sha }}
+        run: |
+          import json
+          import os
+          from pathlib import Path
+
+          out = Path("artifacts/plugin")
+          out.mkdir(parents=True, exist_ok=True)
+          evidence = {
+              "schema": "bke.launcher-plugin-source.v1",
+              "status": "PREPRODUCTION",
+              "production_ready": False,
+              "source_repository": "jan2xo/bke-demo-app",
+              "source_sha": os.environ["SOURCE_SHA"],
+              "launcher_source_sha": os.environ["LAUNCHER_SOURCE_SHA"],
+              "product_id": "bke-trial-product",
+              "version": "2.0.0",
+              "host_contract_version": 1,
+              "project": "plugin/BKE.Demo.LauncherPlugin/BKE.Demo.LauncherPlugin.csproj",
+          }
+          (out / "PLUGIN-MANIFEST.json").write_text(
+              json.dumps(evidence, indent=2) + "\n",
+              encoding="utf-8",
+          )
+          print(json.dumps(evidence, indent=2))
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BKE-Demo-Launcher-Plugin-Certification
+          path: artifacts/plugin/PLUGIN-MANIFEST.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BKE-Demo-SDK-Client-win-x64
+          path: artifacts/win-x64
+          if-no-files-found: error
+          retention-days: 7
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BKE-Demo-SDK-Client-osx-arm64
+          path: artifacts/osx-arm64
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Diff hygiene
+        shell: bash
+        run: git diff --check
+
+  required-certification:
+    name: Required certification
+    if: always() && needs.plan.result == 'success'
+    needs: [plan, plugin]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require Demo plugin certification
+        env:
+          PLUGIN_RESULT: ${{ needs.plugin.result }}
+          SOURCE_SHA: ${{ needs.plan.outputs.source_sha }}
+          LAUNCHER_SOURCE_SHA: ${{ needs.plan.outputs.launcher_source_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$PLUGIN_RESULT" = "success"
+          echo "Required certification PASS: demo=$SOURCE_SHA launcher=$LAUNCHER_SOURCE_SHA"
