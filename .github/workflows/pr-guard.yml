@@ -1,0 +1,79 @@
+name: PR Guard
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    name: Repository + plugin policy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify intentional CI and plugin boundary
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          root = Path(".")
+          certify = root / ".github/workflows/certify.yml"
+          if not certify.is_file():
+              raise SystemExit("Intent certification workflow is missing.")
+          if (root / ".github/workflows/ci.yml").exists():
+              raise SystemExit("Legacy automatic substantial CI became active again.")
+
+          workflow = certify.read_text(encoding="utf-8")
+          if "\n  workflow_dispatch:" not in workflow or "\n  issue_comment:" not in workflow:
+              raise SystemExit("Certification must remain explicitly invokable.")
+          if re.search(r"(?m)^  (push|pull_request|schedule|workflow_run):", workflow):
+              raise SystemExit("Substantial certification gained an automatic trigger.")
+
+          pin_path = root / "eng/launcher-source.sha"
+          plugin_root = root / "plugin/BKE.Demo.LauncherPlugin"
+          project_path = plugin_root / "BKE.Demo.LauncherPlugin.csproj"
+
+          if pin_path.exists() or project_path.exists():
+              if not pin_path.is_file() or not project_path.is_file():
+                  raise SystemExit("Plugin source and Launcher pin must appear together.")
+
+              pin = pin_path.read_text(encoding="utf-8").strip()
+              if not re.fullmatch(r"[0-9a-f]{40}", pin):
+                  raise SystemExit("Launcher source pin must be an exact lowercase SHA.")
+
+              project = project_path.read_text(encoding="utf-8")
+              if "BKE.Launcher.Plugin.Abstractions" not in project:
+                  raise SystemExit("Demo plugin is not bound to Launcher plugin abstractions.")
+              if "BKE.Launcher.PluginHost/BKE.Launcher.PluginHost.csproj" in project:
+                  raise SystemExit("Demo plugin absorbed the Launcher runtime project.")
+
+              source = "\n".join(
+                  path.read_text(encoding="utf-8")
+                  for path in plugin_root.glob("*.cs")
+              )
+              forbidden = [
+                  "127.0.0.1:43873",
+                  "/v1/",
+                  "HttpClient",
+                  "BKE.Desktop.Client",
+                  "agent-sessions",
+                  "DATABASE_URL",
+                  "PAYMONGO",
+              ]
+              present = [
+                  token for token in forbidden
+                  if token.lower() in source.lower()
+              ]
+              if present:
+                  raise SystemExit(
+                      "Launcher plugin crossed the host/Agent/DS boundary: "
+                      + ", ".join(present)
+                  )
+          else:
+              print("Plugin files absent: CI-bootstrap policy-only guard.")
+
+          print("BKE Demo PR Guard: PASS")
